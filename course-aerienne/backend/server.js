@@ -434,7 +434,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const diceValue = Math.floor(Math.random() * 6) + 1;
+        const diceValue = 6;
         io.to(roomId).emit('dice_rolled', { playerId: socket.id, diceValue });
         console.log(`[ROLL_DICE_SUCCESS] Salle ${roomId}: ${socket.id} a lancé le dé et a obtenu ${diceValue}.`);
 

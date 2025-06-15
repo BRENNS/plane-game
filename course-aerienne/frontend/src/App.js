@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
+import Gameboard from "./Gameboard";
 
 // Connexion au serveur Socket.IO réel
 const socket = io('http://localhost:4000');
@@ -225,6 +226,14 @@ function App() {
     }
   };
 
+  const handlePieceClick = (pieceId) => {
+    // Trouver le mouvement correspondant à ce pion
+    const move = possibleMoves.find(m => m.pieceId === pieceId);
+
+    if (move) {
+      handleMakeMove(move.pieceId, move.newPosition, move.type);
+    }
+  };
 
   const handleLeaveRoom = () => {
     // Réinitialiser l'état local
@@ -552,7 +561,13 @@ function App() {
                           </div>
                       ))}
                     </div>
+                    <Gameboard
+                        gameState={gameState}
+                        possibleMoves={possibleMoves}
+                        onPieceClick={handlePieceClick}
+                    />
                   </div>
+
               )}
             </div>
         )}
