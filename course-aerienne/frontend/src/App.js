@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
 // Connexion au serveur Socket.IO réel
@@ -13,6 +13,19 @@ function App() {
   const [gameState, setGameState] = useState(null);
   const [isCreator, setIsCreator] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [possibleMoves, setPossibleMoves] = useState([]); // Nouveau: pour stocker les mouvements possibles
+  const [lastRolledDice, setLastRolledDice] = useState(null); // Nouveau: pour rejouer après un 6
+
+  // Scroll vers le bas des messages
+  const messagesEndRef = useRef(null);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
 
   useEffect(() => {
     // Gestion de la connexion
@@ -26,6 +39,14 @@ function App() {
       console.log('Déconnecté du serveur Socket.IO');
       setIsConnected(false);
       setMessages(prev => [...prev, 'Déconnecté du serveur.']);
+      // Réinitialiser l'état du jeu à la déconnexion complète (si le joueur ne peut pas se reconnecter à la même salle)
+      setCurrentRoomId('');
+      setRoomInputValue('');
+      setGameState(null);
+      setIsCreator(false);
+      setDiceValue(null);
+      setPossibleMoves([]);
+      setLastRolledDice(null);
     });
 
     // Gestion de la création de salle
@@ -60,6 +81,7 @@ function App() {
 
     // Début de partie
     socket.on('game_started', ({ firstPlayerId, turnOrder }) => {
+      // Trouver le nom du joueur à partir de l'état actuel pour afficher un message plus clair
       const firstPlayerName = gameState?.players?.find(p => p.id === firstPlayerId)?.name || firstPlayerId;
       setMessages(prev => [...prev, `La partie a commencé ! C'est le tour de ${firstPlayerId === socket.id ? 'VOUS' : firstPlayerName}.`]);
     });
@@ -69,6 +91,12 @@ function App() {
       console.log('Mise à jour de l\'état du jeu:', gameState);
       setGameState(gameState);
       setIsCreator(gameState.creatorId === socket.id);
+
+      // Si le jeu est terminé, afficher le gagnant
+      if (gameState.gameStatus === 'finished' && gameState.winner) {
+        const winnerName = gameState.players.find(p => p.id === gameState.winner)?.name || gameState.winner;
+        setMessages(prev => [...prev, `PARTIE TERMINÉE ! Le gagnant est ${winnerName} ! 🎉`]);
+      }
     });
 
     // Résultat du lancer de dé
@@ -76,12 +104,37 @@ function App() {
       const playerName = gameState?.players?.find(p => p.id === playerId)?.name || playerId;
       setMessages(prev => [...prev, `${playerId === socket.id ? 'Vous avez' : `${playerName} a`} lancé le dé : ${diceValue}`]);
       setDiceValue(diceValue);
+      setLastRolledDice(diceValue); // Stocke le dernier dé pour gérer le rejouer
+    });
+
+    // Événement pour les mouvements possibles après un jet de dé
+    socket.on('possible_moves', ({ diceValue, possibleMoves }) => {
+      console.log('Mouvements possibles:', possibleMoves);
+      setPossibleMoves(possibleMoves);
+      // Si un seul mouvement est possible, l'effectuer automatiquement
+      if (possibleMoves.length === 1) {
+        const move = possibleMoves[0];
+        handleMakeMove(move.pieceId, move.newPosition, move.type);
+      } else if (possibleMoves.length > 1) {
+        setMessages(prev => [...prev, `Choisissez un pion à déplacer (Dé: ${diceValue}).`]);
+      } else {
+        // Aucun mouvement possible, le serveur gère le passage de tour
+        setMessages(prev => [...prev, `Aucun mouvement possible avec ${diceValue}.`]);
+        setPossibleMoves([]); // Réinitialise les mouvements possibles
+      }
+    });
+
+    // Gérer la fin de partie
+    socket.on('game_over', ({ winnerId, winnerName }) => {
+      setMessages(prev => [...prev, `PARTIE TERMINÉE ! Le gagnant est ${winnerName} ! 🎉`]);
+      setGameState(prev => ({ ...prev, gameStatus: 'finished', winner: winnerId })); // Met à jour le statut
     });
 
     // Gestion des erreurs
     socket.on('error', ({ message }) => {
       console.error('Erreur du serveur:', message);
       setMessages(prev => [...prev, `Erreur du serveur: ${message}`]);
+      setPossibleMoves([]); // En cas d'erreur, annuler la sélection de mouvement
     });
 
     // Nettoyage lors du démontage du composant
@@ -95,9 +148,12 @@ function App() {
       socket.off('game_started');
       socket.off('game_state_update');
       socket.off('dice_rolled');
+      socket.off('possible_moves');
+      socket.off('game_over');
       socket.off('error');
     };
   }, [gameState]); // Ajout de gameState comme dépendance pour les noms des joueurs
+
 
   const handleCreateRoom = () => {
     if (!isConnected) {
@@ -145,10 +201,30 @@ function App() {
     if (gameState && gameState.gameStatus === 'playing' && gameState.currentPlayer === socket.id) {
       console.log('Lancer de dé pour la salle:', gameState.id);
       socket.emit('roll_dice', { roomId: gameState.id });
+      setPossibleMoves([]); // Réinitialise les mouvements possibles avant le nouveau jet
     } else {
       setMessages(prev => [...prev, "Ce n'est pas votre tour ou la partie n'a pas commencé."]);
     }
   };
+
+  // Nouvelle fonction pour gérer la sélection d'un pion et l'envoi du mouvement
+  const handleMakeMove = (pieceId, newPosition, moveType) => {
+    if (gameState && gameState.gameStatus === 'playing' && gameState.currentPlayer === socket.id) {
+      console.log(`Client: Envoi du mouvement pour le pion ${pieceId} vers ${newPosition} (Type: ${moveType})`);
+      socket.emit('make_move', {
+        roomId: currentRoomId,
+        pieceId,
+        newPosition,
+        moveType
+      });
+      setPossibleMoves([]); // Vide les mouvements possibles une fois le choix fait
+      setDiceValue(null); // Cache le dé après le mouvement
+      // Le passage de tour (ou rejouer après un 6) est géré côté serveur
+    } else {
+      setMessages(prev => [...prev, "Impossible de faire ce mouvement."]);
+    }
+  };
+
 
   const handleLeaveRoom = () => {
     // Réinitialiser l'état local
@@ -157,10 +233,13 @@ function App() {
     setGameState(null);
     setIsCreator(false);
     setDiceValue(null);
+    setPossibleMoves([]);
+    setLastRolledDice(null);
     setMessages(prev => [...prev, "Vous avez quitté la salle."]);
 
     // Le serveur gérera automatiquement la déconnexion via l'événement disconnect
     // Si vous voulez implémenter un leave explicite, vous pouvez ajouter un événement 'leave_room'
+    // socket.emit('leave_room', { roomId: currentRoomId }); // Exemple d'un événement 'leave_room'
   };
 
   const renderPlayerList = () => {
@@ -181,6 +260,7 @@ function App() {
                 <small>
                   ({player.pieces.filter(p => p.status === 'hangar').length} en hangar, {' '}
                   {player.pieces.filter(p => p.status === 'on_board').length} sur plateau, {' '}
+                  {player.pieces.filter(p => p.status === 'final_path').length} dans la zone finale, {' '}
                   {player.pieces.filter(p => p.status === 'finished').length} arrivés)
                 </small>
               </li>
@@ -199,12 +279,24 @@ function App() {
           borderRadius: '5px',
           backgroundColor: isConnected ? '#4CAF50' : '#f44336',
           color: 'white',
-          fontSize: '0.8em'
+          fontSize: '0.8em',
+          zIndex: 1000
         }}>
           {isConnected ? 'Connecté' : 'Déconnecté'}
         </div>
     );
   };
+
+  // Fonction pour trouver un pion par son ID
+  const getPieceById = (pieceId) => {
+    if (!gameState || !gameState.players) return null;
+    for (const player of gameState.players) {
+      const piece = player.pieces.find(p => p.id === pieceId);
+      if (piece) return piece;
+    }
+    return null;
+  };
+
 
   return (
       <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
@@ -338,20 +430,22 @@ function App() {
 
               {gameState.gameStatus === 'playing' && (
                   <div style={{ marginTop: '20px' }}>
-                    <button
-                        onClick={handleRollDice}
-                        disabled={gameState.currentPlayer !== socket.id}
-                        style={{
-                          padding: '10px 20px',
-                          backgroundColor: gameState.currentPlayer === socket.id ? '#673AB7' : '#9E9E9E',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: gameState.currentPlayer === socket.id ? 'pointer' : 'not-allowed'
-                        }}
-                    >
-                      {gameState.currentPlayer === socket.id ? 'Lancer le dé' : 'Pas votre tour'}
-                    </button>
+                    {gameState.currentPlayer === socket.id && possibleMoves.length === 0 && gameState.gameStatus !== 'finished' && (
+                        <button
+                            onClick={handleRollDice}
+                            disabled={!isConnected}
+                            style={{
+                              padding: '10px 20px',
+                              backgroundColor: '#673AB7',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                        >
+                          Lancer le dé
+                        </button>
+                    )}
 
                     {diceValue && (
                         <p style={{ marginTop: '10px' }}>
@@ -359,6 +453,52 @@ function App() {
                         </p>
                     )}
 
+                    {possibleMoves.length > 0 && gameState.currentPlayer === socket.id && (
+                        <div style={{ marginTop: '15px', border: '1px solid #ddd', padding: '10px', borderRadius: '8px', backgroundColor: '#e8f0fe' }}>
+                          <h4>Choisissez un pion à déplacer (Dé: {lastRolledDice}) :</h4>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                            {possibleMoves.map(move => {
+                              const piece = getPieceById(move.pieceId);
+                              if (!piece) return null;
+                              return (
+                                  <button
+                                      key={move.pieceId}
+                                      onClick={() => handleMakeMove(move.pieceId, move.newPosition, move.type)}
+                                      style={{
+                                        padding: '8px 12px',
+                                        backgroundColor: piece.color,
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '5px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        boxShadow: '2px 2px 5px rgba(0,0,0,0.2)'
+                                      }}
+                                  >
+                                    Pion {piece.id.split('-').pop()} vers {move.newPosition === 200 ? 'Arrivée' : move.newPosition}
+                                    {move.type === 'exit_hangar' && ' (Sortir du Hangar)'}
+                                    {move.type === 'win_piece' && ' (Gagner !)'}
+                                  </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                    )}
+
+                    {gameState.gameStatus === 'playing' && gameState.currentPlayer !== socket.id && (
+                        <p style={{ fontStyle: 'italic', color: '#666' }}>
+                          Ce n'est pas votre tour. En attente de {gameState.players.find(p => p.id === gameState.currentPlayer)?.name || 'l\'autre joueur'}...
+                        </p>
+                    )}
+
+                    {gameState.gameStatus === 'finished' && (
+                        <h2 style={{ color: '#007bff', textAlign: 'center', marginTop: '30px' }}>
+                          Partie Terminée ! {gameState.winner === socket.id ? 'Vous avez gagné !' : `${gameState.players.find(p => p.id === gameState.winner)?.name || 'Un joueur'} a gagné !`}
+                        </h2>
+                    )}
+
+
+                    {/* Plateau de jeu à implémenter ici */}
                     <div style={{
                       marginTop: '20px',
                       border: '2px dashed #ccc',
@@ -371,7 +511,7 @@ function App() {
                       color: '#666'
                     }}>
                       <p style={{ width: '100%', textAlign: 'center', margin: '0 0 20px 0' }}>
-                        Plateau de jeu à implémenter ici
+                        Représentation sommaire du plateau et des pions:
                       </p>
 
                       {gameState.players.map(player => (
@@ -385,24 +525,25 @@ function App() {
                             backgroundColor: '#f9f9f9'
                           }}>
                             <h4 style={{ color: player.color, margin: '0 0 10px 0' }}>
-                              Pions de {player.name}
+                              {player.name}
                             </h4>
-                            <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                               {player.pieces.map(piece => (
                                   <span key={piece.id} style={{
                                     display: 'inline-block',
-                                    width: '20px',
-                                    height: '20px',
+                                    width: '25px',
+                                    height: '25px',
                                     borderRadius: '50%',
                                     backgroundColor: piece.color,
-                                    border: piece.status === 'on_board' ? '2px solid black' : '1px dashed grey',
+                                    border: (possibleMoves.some(move => move.pieceId === piece.id) ? '3px solid gold' : '1px solid grey'), // Mettre en évidence les pions sélectionnables
                                     opacity: piece.status === 'finished' ? 0.5 : 1,
                                     margin: '2px',
                                     textAlign: 'center',
-                                    lineHeight: '20px',
-                                    fontSize: '0.7em',
+                                    lineHeight: '25px',
+                                    fontSize: '0.8em',
                                     color: 'white',
-                                    fontWeight: 'bold'
+                                    fontWeight: 'bold',
+                                    boxShadow: '1px 1px 3px rgba(0,0,0,0.1)'
                                   }}>
                                     {piece.status === 'hangar' ? 'H' : (piece.status === 'finished' ? 'F' : piece.position)}
                                   </span>
@@ -432,6 +573,7 @@ function App() {
                   <p key={index} style={{ margin: '3px 0', fontSize: '0.9em' }}>{msg}</p>
               ))
           )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
   );
