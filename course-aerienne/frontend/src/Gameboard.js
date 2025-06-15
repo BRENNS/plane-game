@@ -93,6 +93,34 @@ const Gameboard = ({ gameState, possibleMoves, onPieceClick }) => {
         for (let i = 0; i < 52; i++) {
             const pos = getMainPathPosition(i);
             const isStartingCell = [0, 13, 26, 39].includes(i);
+            
+            // Déterminer la couleur de la case
+            let fillColor = '#e0e0e0';
+            let strokeColor = '#bdbdbd';
+            
+            // Cases de départ colorées
+            if (i === 0) {
+                fillColor = 'red';
+                strokeColor = 'darkred';
+            } else if (i === 13) {
+                fillColor = 'blue';
+                strokeColor = 'darkblue';
+            } else if (i === 26) {
+                fillColor = 'green';
+                strokeColor = 'darkgreen';
+            } else if (i === 39) {
+                fillColor = 'yellow';
+                strokeColor = 'goldenrod';
+            }
+            
+            // Cases spéciales (comme dans l'image)
+            // Ajout des cases colorées selon le motif de l'image
+            if ([2, 4, 6, 8, 10, 15, 17, 19, 21, 23, 28, 30, 32, 34, 36, 41, 43, 45, 47, 49].includes(i)) {
+                if (i < 13) fillColor = 'yellow';
+                else if (i < 26) fillColor = 'red';
+                else if (i < 39) fillColor = 'blue';
+                else fillColor = 'green';
+            }
 
             cells.push(
                 <circle
@@ -100,25 +128,10 @@ const Gameboard = ({ gameState, possibleMoves, onPieceClick }) => {
                     cx={pos.x}
                     cy={pos.y}
                     r={CELL_SIZE / 2}
-                    fill={isStartingCell ? '#ffeb3b' : '#e0e0e0'}
-                    stroke={isStartingCell ? '#f57f17' : '#bdbdbd'}
+                    fill={fillColor}
+                    stroke={strokeColor}
                     strokeWidth="2"
                 />
-            );
-
-            // Numéro de la case
-            cells.push(
-                <text
-                    key={`cell-text-${i}`}
-                    x={pos.x}
-                    y={pos.y + 4}
-                    textAnchor="middle"
-                    fontSize="10"
-                    fill="#333"
-                    fontWeight="bold"
-                >
-                    {i}
-                </text>
             );
         }
         return cells;
@@ -175,32 +188,69 @@ const Gameboard = ({ gameState, possibleMoves, onPieceClick }) => {
                         cx={pos.x}
                         cy={pos.y}
                         r={CELL_SIZE / 2 - 2}
-                        fill={i === 5 ? color : '#fff'}
+                        fill={color}
                         stroke={color}
                         strokeWidth="2"
                         fillOpacity={i === 5 ? "0.8" : "0.3"}
                     />
                 );
-
-                if (i === 5) {
-                    paths.push(
-                        <text
-                            key={`final-text-${color}-${i}`}
-                            x={pos.x}
-                            y={pos.y + 4}
-                            textAnchor="middle"
-                            fontSize="10"
-                            fill="white"
-                            fontWeight="bold"
-                        >
-                            ★
-                        </text>
-                    );
-                }
             }
         });
 
         return paths;
+    };
+    
+    // Rendu des flèches directionnelles
+    const renderArrows = () => {
+        const arrows = [];
+        const centerX = BOARD_SIZE / 2;
+        const centerY = BOARD_SIZE / 2;
+        
+        // Flèche vers le haut (rouge)
+        arrows.push(
+            <path
+                key="arrow-up"
+                d={`M${centerX},${centerY - 30} L${centerX - 15},${centerY - 10} L${centerX + 15},${centerY - 10} Z`}
+                fill="red"
+                stroke="darkred"
+                strokeWidth="1"
+            />
+        );
+        
+        // Flèche vers la droite (bleu)
+        arrows.push(
+            <path
+                key="arrow-right"
+                d={`M${centerX + 30},${centerY} L${centerX + 10},${centerY - 15} L${centerX + 10},${centerY + 15} Z`}
+                fill="blue"
+                stroke="darkblue"
+                strokeWidth="1"
+            />
+        );
+        
+        // Flèche vers le bas (vert)
+        arrows.push(
+            <path
+                key="arrow-down"
+                d={`M${centerX},${centerY + 30} L${centerX - 15},${centerY + 10} L${centerX + 15},${centerY + 10} Z`}
+                fill="green"
+                stroke="darkgreen"
+                strokeWidth="1"
+            />
+        );
+        
+        // Flèche vers la gauche (jaune)
+        arrows.push(
+            <path
+                key="arrow-left"
+                d={`M${centerX - 30},${centerY} L${centerX - 10},${centerY - 15} L${centerX - 10},${centerY + 15} Z`}
+                fill="yellow"
+                stroke="goldenrod"
+                strokeWidth="1"
+            />
+        );
+        
+        return arrows;
     };
 
     // Rendu des pions
@@ -320,13 +370,25 @@ const Gameboard = ({ gameState, possibleMoves, onPieceClick }) => {
 
                 <text
                     x={BOARD_SIZE / 2}
-                    y={BOARD_SIZE / 2}
+                    y={BOARD_SIZE / 2 - 20}
                     textAnchor="middle"
                     fontSize="16"
                     fill="#2e7d32"
                     fontWeight="bold"
                 >
                     ARRIVÉE
+                </text>
+                
+                {/* Point de saut */}
+                <text
+                    x={BOARD_SIZE / 2}
+                    y={BOARD_SIZE / 2 + 20}
+                    textAnchor="middle"
+                    fontSize="16"
+                    fill="#2e7d32"
+                    fontWeight="bold"
+                >
+                    JUMP POINT
                 </text>
 
                 {/* Plateau principal */}
@@ -337,9 +399,16 @@ const Gameboard = ({ gameState, possibleMoves, onPieceClick }) => {
 
                 {/* Pistes finales */}
                 {renderFinalPaths()}
+                
+                {/* Flèches directionnelles */}
+                {renderArrows()}
 
                 {/* Pions */}
                 {renderPieces()}
+                
+                {/* Étiquettes en bas */}
+                <text x="50" y={BOARD_SIZE - 10} fontSize="12" fill="#333" fontWeight="bold">Home Base</text>
+                <text x={BOARD_SIZE - 120} y={BOARD_SIZE - 10} fontSize="12" fill="#333" fontWeight="bold">Jump Point</text>
             </svg>
         </div>
     );
