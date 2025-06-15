@@ -1,0 +1,63 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# TypeScript v1 declaration files
+*.ts.d.orig
+
+# Optional npm cache directory
+.npm/
+
+# dotenv environment variables file
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# macOS
+.DS_Store
+
+# thumbdb files
+Thumbs.db
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+.vscode/*.code-snippets
+
+# IntelliJ / WebStorm / PhpStorm etc.
+.idea/
+*.iml
+*.iws
+.project
+.classpath
+.settings/
+
+# npm package manager cache
+.npm/
+
+# Yarn cache
+.yarn/
+
+# Build artifacts
+build/
+dist/
+tmp/
+
+# Frontend specific (React)
+frontend/build/   # React build output
+frontend/.env.local # Local environment variables specific to frontend
+
+# Backend specific (Node.js)
+backend/node_modules/ # Node.js dependencies for backend
+backend/build/        # Any potential build output for backend (e.g. if you transpile TS)
+backend/.env.local    # Local environment variables specific to backend
